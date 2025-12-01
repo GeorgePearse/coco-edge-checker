@@ -5,14 +5,20 @@ A fast Rust tool to validate COCO segmentation annotations against edge detectio
 ## Features
 
 - **Fast parallel processing** using Rayon
+- **Distance transform** for precise edge-to-boundary distance measurement
 - **Multiple edge detectors**: Canny, Sobel, or combined
 - **Handles both polygon and RLE segmentations**
-- **Quality metrics per annotation**:
-  - Boundary precision: % of mask boundary points near image edges
-  - Boundary recall: % of image edges captured by the mask
-  - Alignment score: F1-score combining both
-- **JSON report output** with detailed per-annotation scores
-- **Optional visualizations**: side-by-side comparison images
+- **Comprehensive quality metrics**:
+  - Distance-based scoring with exponential decay
+  - Mean/median/percentile distance statistics
+  - Confidence indicators for edge case handling
+- **Smart edge case handling**:
+  - Low-contrast boundaries (flags uncertainty vs bad annotation)
+  - Textured objects (filters internal edges from recall)
+  - Image boundary truncation detection
+  - Small annotation reliability warnings
+- **JSON report output** with detailed per-annotation analysis
+- **Color-coded visualizations**: green (good) to red (bad)
 
 ## Installation
 
@@ -35,14 +41,12 @@ cargo build --release
   --visualize \
   -l 100
 
-# Tune edge detection parameters
+# Tune scoring parameters
 ./target/release/coco-edge-checker \
   -a annotations.json \
   -i images/ \
-  -m canny \
-  --canny-low 30 \
-  --canny-high 80 \
-  --distance-threshold 5
+  --scoring-sigma 3.0 \
+  --gradient-threshold 20
 ```
 
 ## Options
@@ -56,6 +60,9 @@ cargo build --release
 | `--canny-low` | Canny low threshold | `50.0` |
 | `--canny-high` | Canny high threshold | `100.0` |
 | `--distance-threshold` | Pixel distance for alignment | `3` |
+| `--scoring-sigma` | Sigma for distance scoring (higher = lenient) | `2.0` |
+| `--gradient-threshold` | Min gradient for edge confidence (0-255) | `30` |
+| `--min-boundary-points` | Min points for reliable stats | `32` |
 | `-l, --limit` | Max images to process (0 = all) | `0` |
 | `--visualize` | Generate visualization images | off |
 
@@ -71,20 +78,47 @@ cargo build --release
   "total_images": 100,
   "total_annotations": 523,
   "avg_alignment_score": 0.72,
+  "avg_distance_score": 0.68,
   "low_quality_count": 45,
+  "low_confidence_count": 23,
   "images": [
     {
       "image_id": 123,
       "file_name": "image.jpg",
       "avg_alignment_score": 0.68,
+      "avg_distance_score": 0.65,
       "annotations": [
         {
           "annotation_id": 456,
-          "category": "person",
-          "edge_alignment_score": 0.65,
-          "boundary_precision": 0.70,
-          "boundary_recall": 0.61,
-          "issues": ["Many image edges near object are not captured by mask"]
+          "category": "cat",
+
+          "edge_alignment_score": 0.35,
+          "boundary_precision": 0.28,
+          "boundary_recall": 0.45,
+
+          "distance_score": 0.72,
+          "distance_stats": {
+            "mean": 2.1,
+            "median": 1.5,
+            "p90": 4.5,
+            "pct_within_1px": 0.45,
+            "pct_within_2px": 0.68
+          },
+
+          "adjusted_precision": 0.75,
+          "adjusted_recall": 0.69,
+
+          "edge_confidence_ratio": 0.40,
+          "is_textured": true,
+          "is_low_contrast": true,
+          "is_truncated": false,
+          "is_small": false,
+          "evaluation_confidence": "Medium",
+
+          "issues": [
+            "Low edge contrast on 60% of boundary",
+            "Textured object (892 internal vs 156 boundary edges)"
+          ]
         }
       ]
     }
@@ -92,15 +126,33 @@ cargo build --release
 }
 ```
 
+## Key Metrics Explained
+
+### Distance Score
+Uses exponential decay based on actual pixel distance to nearest edge:
+- Score = exp(-d²/2σ²) averaged over all boundary points
+- At σ=2.0: 1px→0.88, 2px→0.61, 3px→0.32, 5px→0.04
+
+### Evaluation Confidence
+- **High**: No edge cases, metrics are reliable
+- **Medium**: One edge case factor present
+- **Low**: Multiple factors (textured + low contrast + small + truncated)
+
+### Interpreting Results
+A **low `edge_alignment_score` with reasonable `distance_score` and `is_low_contrast: true`** means "annotation is probably fine, we just can't detect edges to verify it" - NOT "bad annotation".
+
 ## How It Works
 
 1. Loads COCO annotations and corresponding images
-2. Applies edge detection (Canny/Sobel) to each image
-3. Extracts mask boundaries from polygon/RLE annotations
-4. Compares annotation boundaries against detected edges:
-   - **Precision**: Do mask boundaries follow actual edges?
-   - **Recall**: Are all relevant edges captured by the mask?
-5. Generates quality scores and identifies problematic annotations
+2. Computes gradient magnitude and edge detection per image
+3. Builds distance transform (distance from each pixel to nearest edge)
+4. For each annotation boundary:
+   - Measures actual distance to nearest edge at each point
+   - Computes distance statistics and exponential decay score
+   - Analyzes edge confidence (gradient strength at boundary)
+   - Detects edge cases (texture, low contrast, truncation, size)
+   - Generates adjusted metrics excluding low-confidence regions
+5. Outputs comprehensive quality report
 
 ## License
 

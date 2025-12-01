@@ -66,14 +66,14 @@ struct Args {
 }
 
 // COCO Format Structures
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct CocoDataset {
     images: Vec<CocoImage>,
     annotations: Vec<CocoAnnotation>,
     categories: Vec<CocoCategory>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct CocoImage {
     id: u64,
     file_name: String,
@@ -81,7 +81,7 @@ struct CocoImage {
     height: u32,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct CocoAnnotation {
     id: u64,
     image_id: u64,
@@ -92,27 +92,27 @@ struct CocoAnnotation {
     iscrowd: u8,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 enum Segmentation {
     Polygon(Vec<Vec<f64>>),
     Rle(RleSegmentation),
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct RleSegmentation {
     counts: RleCounts,
     size: Vec<u32>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 enum RleCounts {
     Encoded(String),
     Raw(Vec<u32>),
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct CocoCategory {
     id: u64,
     name: String,
